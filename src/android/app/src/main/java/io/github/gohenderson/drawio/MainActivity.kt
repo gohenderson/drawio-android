@@ -188,12 +188,14 @@ class MainActivity : Activity() {
     private fun layout(): View {
         web = WebView(this).apply {
             visibility = View.GONE
+            tag = "viewer"
             settings.javaScriptEnabled = true
             settings.allowFileAccess = false // assets still load; nothing else on the phone does
             settings.allowContentAccess = false
             settings.domStorageEnabled = false
-            settings.builtInZoomControls = true // pinch to zoom
-            settings.displayZoomControls = false
+            // The page zooms and pans the diagram itself (pinch, drag, double-tap);
+            // the WebView's own zoom would fight it.
+            settings.setSupportZoom(false)
             addJavascriptInterface(Bridge(), "DrawioAndroid")
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {

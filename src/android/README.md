@@ -2,12 +2,14 @@
 
 A native Android app (Kotlin, no Electron) in this fork of draw.io desktop. For now it's a
 **viewer**: it opens `.drawio` / `.xml` diagrams, `.drawio.png` and `.drawio.svg` files, with
-pages, layers, zoom (toolbar or pinch) and links that open in your browser.
+pages and links that open in your browser. Fingers do the moving: pinch to zoom, drag to
+pan, double-tap to fit the diagram to the screen again (a mouse wheel zooms too).
 
 - **How it draws.** draw.io's own offline viewer, `viewer-static.min.js` (shapes embedded,
   the same script as the macOS Quick Look preview), runs in a WebView on a local page
   (`app/src/main/assets/viewer.html`). The app passes the diagram in through a small
-  JavaScript bridge. The script comes from the `drawio` submodule at build time and isn't
+  JavaScript bridge. The page does the gestures itself, on the viewer's graph view (the
+  WebView's own zoom is off), and shows a toolbar only to switch pages. The script comes from the `drawio` submodule at build time and isn't
   committed here.
 - **Nothing leaves the phone.** The app has no INTERNET permission, and the WebView loads
   only the app's own assets.
