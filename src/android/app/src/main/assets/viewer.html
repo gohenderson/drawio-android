@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<!--
+	The Android viewer page. Renders the diagram the app passes in with
+	viewer-static.min.js (shapes embedded, no network), the same script the
+	macOS Quick Look preview uses. The app copies the script in at build time
+	from the drawio submodule. The app has no INTERNET permission
+-->
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+	<style>
+		html, body
+		{
+			margin: 0;
+			padding: 0;
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			background: #ffffff;
+		}
+		#diagram
+		{
+			touch-action: none;
+			width: 100%;
+			height: 100%;
+		}
+		#error
+		{
+			display: none;
+			padding: 2em;
+			font-family: sans-serif;
+			color: #666666;
+			text-align: center;
+		}
+	</style>
+</head>
+<body>
+	<div id="diagram" style="width: 100%; height: calc(100% - 26px);"></div>
+	<div id="error"></div>
+	<script>
+		// The app's bridge (DiagramBridge); a stub when the page is opened in a browser
+		var host = window.DrawioAndroid ||
+		{
+			xml: function() { return window.testXml || ''; },
+			rendered: function(pages) { window.testResult = 'rendered:' + pages; },
+			failed: function(message) { window.testResult = 'failed:' + message; }
+		};
+
+		function showError(message)
+		{
+			var err = document.getElementById('error');
+			err.style.display = 'block';
+			err.innerText = 'Cannot show this diagram: ' + message;
+			document.getElementById('diagram').style.display = 'none';
+			host.failed(String(message));
+		}
+
+		function countPages(xml)
+		{
+			var doc = new DOMParser().parseFromString(xml, 'text/xml');
+			var pages = doc.documentElement.nodeName == 'mxfile' ?
+				doc.documentElement.getElementsByTagName('diagram').length : 1;
+
+			return Math.max(1, pages);
+		}
+
+		// The whole page on screen at first (never bigger than real size), and
+		// the toolbar's Fit button comes back to this
+		function fitToScreen(viewer)
+		{
+			var graph = viewer.graph;
+			graph.maxFitScale = 1;
+			graph.fit(10, false, 0, true, false, false);
+			graph.center(true, true, 0.5, 0.5);
+			graph.initialViewState =
+			{
+				scale: graph.view.scale,
+				translate: graph.view.translate.clone()
+			};
+		}
+
+		// Fingers move and zoom the diagram: drag to pan, pinch to zoom (about the
+		// point between your fingers), double-tap to fit it to the screen again
+		var MIN_SCALE = 0.05;
+		var MAX_SCALE = 8;
+
+		function panBy(graph, dx, dy)
+		{
+			var view = graph.view;
+			view.setTranslate(view.translate.x + dx / view.scale, view.translate.y + dy / view.scale);
+		}
+
+		// Zooms to scale (clamped), keeping the diagram point under (x, y) where it is
+		function zoomAt(graph, x, y, scale)
+		{
+			var view = graph.view;
+			scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+			var tx = view.translate.x + x / scale - x / view.scale;
+			var ty = view.translate.y + y / scale - y / view.scale;
+			view.scaleAndTranslate(scale, tx, ty);
+		}
+
+		function installGestures(viewer)
+		{
+			var graph = viewer.graph;
+			var container = graph.container;
+			container.style.overflow = 'hidden';
+			var last = null;
+			var lastTap = 0;
+
+			function local(touch)
+			{
+				var r = container.getBoundingClientRect();
+
+				return {x: touch.clientX - r.left, y: touch.clientY - r.top};
+			}
+
+			function state(touches)
+			{
+				var a = local(touches[0]);
+
+				if (touches.length < 2)
+				{
+					return {x: a.x, y: a.y, dist: 0, count: 1};
+				}
+
+				var b = local(touches[1]);
+
+				return {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2,
+					dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), count: 2};
+			}
+
+			container.addEventListener('touchstart', function(e)
+			{
+				if (e.touches.length == 1)
+				{
+					var now = Date.now();
+
+					if (now - lastTap < 350)
+					{
+						fitToScreen(viewer);
+						lastTap = 0;
+						last = null;
+						e.preventDefault();
+
+						return;
+					}
+
+					lastTap = now;
+				}
+
+				last = state(e.touches);
+			}, {capture: true, passive: false});
+
+			container.addEventListener('touchmove', function(e)
+			{
+				if (last == null)
+				{
+					return;
+				}
+
+				var now = state(e.touches);
+
+				if (now.count != last.count)
+				{
+					last = now; // a finger joined or left: start again from here
+				}
+				else
+				{
+					if (now.count == 2)
+					{
+						zoomAt(graph, last.x, last.y, graph.view.scale * now.dist / last.dist);
+					}
+
+					panBy(graph, now.x - last.x, now.y - last.y);
+					last = now;
+				}
+
+				e.preventDefault();
+				e.stopPropagation();
+			}, {capture: true, passive: false});
+
+			container.addEventListener('touchend', function(e)
+			{
+				last = e.touches.length > 0 ? state(e.touches) : null;
+			}, {capture: true, passive: false});
+
+			// A mouse or trackpad (Chromebooks, emulators): wheel zooms, drag pans
+			container.addEventListener('wheel', function(e)
+			{
+				var p = local(e);
+				zoomAt(graph, p.x, p.y, graph.view.scale * Math.exp(-e.deltaY / 300));
+				e.preventDefault();
+			}, {passive: false});
+		}
+
+		function showDiagram()
+		{
+			try
+			{
+				var xml = host.xml();
+
+				if (!xml)
+				{
+					return;
+				}
+
+				var pages = countPages(xml);
+				var div = document.getElementById('diagram');
+				// The toolbar only switches pages, so a single page has none
+				div.style.height = pages > 1 ? 'calc(100% - 26px)' : '100%';
+				div.innerHTML = '';
+				div.style.display = 'block';
+				document.getElementById('error').style.display = 'none';
+
+				div.setAttribute('data-mxgraph', JSON.stringify(
+				{
+					xml: xml,
+					highlight: 'none',
+					lightbox: false,
+					nav: true,
+					resize: false,
+					// Without zoom buttons the viewer would scale the drawing itself
+					// (responsive mode); the gestures here zoom it instead
+					responsive: false,
+					'auto-fit': true,
+					center: true,
+					toolbar: pages > 1 ? 'pages layers' : null,
+					'toolbar-position': 'top',
+					'toolbar-nohide': true
+				}));
+
+				GraphViewer.createViewerForElement(div, function(viewer)
+				{
+					if (div.getElementsByTagName('svg').length == 0)
+					{
+						showError('nothing to draw');
+					}
+					else
+					{
+						fitToScreen(viewer);
+						installGestures(viewer);
+						window.currentViewer = viewer;
+						host.rendered(pages);
+					}
+				});
+			}
+			catch (e)
+			{
+				showError(e.message || e);
+			}
+		}
+
+		window.onDrawioViewerLoad = showDiagram;
+	</script>
+	<script src="viewer-static.min.js"></script>
+</body>
+</html>

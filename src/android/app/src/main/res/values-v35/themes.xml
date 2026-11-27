@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Keeps the action bar and content clear of the system bars on Android 15. -->
+    <style name="Theme.Drawio" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

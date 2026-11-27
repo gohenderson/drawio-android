@@ -1,0 +1,183 @@
+name: Android
+
+# The native Android app in src/android: build, unit tests, lint, a debug APK to install,
+# and UI tests on an emulator. The drawio submodule isn't checked out (it's large): the
+# build needs only draw.io's viewer script from it, which scripts/fetch-viewer.sh fetches
+# at the commit the submodule points at.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/android/**"
+      - "drawio"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "src/android/**"
+      - "drawio"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build, unit tests, lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Fetch the draw.io viewer
+        run: bash src/android/scripts/fetch-viewer.sh
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle version (from the wrapper)
+        run: |
+          v=$(sed -n 's/^distributionUrl=.*gradle-\([0-9.]*\)-bin\.zip$/\1/p' src/android/gradle/wrapper/gradle-wrapper.properties)
+          if [ -z "$v" ]; then echo "::error::No Gradle version in gradle-wrapper.properties"; exit 1; fi
+          echo "GRADLE_VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+        with:
+          cache-provider: basic   # MIT-licensed caching on actions/cache (free for any repo)
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Build debug APK
+        run: gradle -p src/android --no-daemon assembleDebug -PversionCode=${{ github.run_number }}
+
+      - name: Signed with the committed debug key
+        # So each build installs over the last one (Android refuses a different key).
+        run: |
+          set -euo pipefail
+          want=$(keytool -list -v -keystore src/android/app/debug.keystore -storepass android -alias androiddebugkey \
+            | sed -n 's/.*SHA256: *//p' | tr -d ':' | tr 'A-F' 'a-f')
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)apksigner"
+          got=$("$apksigner" verify --print-certs src/android/app/build/outputs/apk/debug/app-debug.apk \
+            | sed -n 's/.*SHA-256 digest: *//p' | head -n1)
+          echo "want $want"; echo "got  $got"
+          [[ -n "$want" && "$want" == "$got" ]] || { echo "::error::The debug APK isn't signed with src/android/app/debug.keystore"; exit 1; }
+
+      - name: Unit tests
+        run: gradle -p src/android --no-daemon testDebugUnitTest
+
+      - name: Lint (report only)
+        run: gradle -p src/android --no-daemon lintDebug
+
+      - name: Show lint findings
+        if: always()
+        run: |
+          report=src/android/app/build/reports/lint-results-debug.txt
+          if [[ ! -f "$report" ]]; then echo "No lint text report."; exit 0; fi
+          cat "$report"
+          {
+            echo "### Lint"
+            echo '```'
+            tail -n 1 "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload debug APK
+        continue-on-error: true   # a storage hiccup shouldn't fail the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: drawio-android-debug-apk
+          path: src/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload reports
+        continue-on-error: true
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: build-reports
+          path: |
+            src/android/app/build/reports/
+            src/android/app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ui-tests:
+    name: UI tests (emulator)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Fetch the draw.io viewer
+        run: bash src/android/scripts/fetch-viewer.sh
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle version (from the wrapper)
+        run: |
+          v=$(sed -n 's/^distributionUrl=.*gradle-\([0-9.]*\)-bin\.zip$/\1/p' src/android/gradle/wrapper/gradle-wrapper.properties)
+          echo "GRADLE_VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+        with:
+          cache-provider: basic
+          cache-read-only: true   # the build job saves the cache; avoid both saving at once
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Build app and test APKs
+        run: gradle -p src/android --no-daemon assembleDebug assembleDebugAndroidTest
+
+      - name: Enable KVM (hardware acceleration for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run UI tests on emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none -no-snapshot
+          script: gradle -p src/android --no-daemon connectedDebugAndroidTest
+
+      - name: Upload test reports
+        continue-on-error: true
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ui-test-reports
+          path: |
+            src/android/app/build/reports/androidTests/
+            src/android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+          retention-days: 14
