@@ -59,8 +59,22 @@ android {
         targetSdk = 35
         // CI can pass -PversionCode=…; local builds use 1.
         versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
-        versionName = drawioVersion
+        // draw.io's version, and CI's build number so builds can be told apart (Settings →
+        // Apps → draw.io viewer shows it).
+        versionName = drawioVersion + ((findProperty("versionCode") as String?)?.let { " (build $it)" } ?: "")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        // One fixed debug key, committed (debug keys aren't secret): otherwise each CI run
+        // signs with a new one, and Android won't install a build over one signed with
+        // another key.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {

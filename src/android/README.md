@@ -31,6 +31,12 @@ gradle -p src/android connectedDebugAndroidTest  # UI tests, on a device or emul
 With the submodule checked out (`git submodule update --init drawio`), the build reads the
 script from it instead. The app's version is draw.io's (`drawio/VERSION`).
 
+## Installing builds
+
+Debug builds are signed with `app/debug.keystore` (committed; debug keys aren't secret), so
+each one installs over the last. The version shows draw.io's version and the CI build
+number, e.g. `32.6.10 (build 7)`, in Settings → Apps → draw.io viewer → App details.
+
 ## CI
 
 `.github/workflows/android.yml` runs on changes to `src/android/`, the submodule pointer or

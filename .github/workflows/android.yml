@@ -65,6 +65,18 @@ jobs:
       - name: Build debug APK
         run: gradle -p src/android --no-daemon assembleDebug -PversionCode=${{ github.run_number }}
 
+      - name: Signed with the committed debug key
+        # So each build installs over the last one (Android refuses a different key).
+        run: |
+          set -euo pipefail
+          want=$(keytool -list -v -keystore src/android/app/debug.keystore -storepass android -alias androiddebugkey \
+            | sed -n 's/.*SHA256: *//p' | tr -d ':' | tr 'A-F' 'a-f')
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)apksigner"
+          got=$("$apksigner" verify --print-certs src/android/app/build/outputs/apk/debug/app-debug.apk \
+            | sed -n 's/.*SHA-256 digest: *//p' | head -n1)
+          echo "want $want"; echo "got  $got"
+          [[ -n "$want" && "$want" == "$got" ]] || { echo "::error::The debug APK isn't signed with src/android/app/debug.keystore"; exit 1; }
+
       - name: Unit tests
         run: gradle -p src/android --no-daemon testDebugUnitTest
 
