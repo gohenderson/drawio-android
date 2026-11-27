@@ -36,7 +36,7 @@ object DiagramFile {
             return pngXml(bytes)?.let { Result.Diagram(it) }
                 ?: Result.Problem("This PNG has no draw.io diagram in it.")
         }
-        val text = String(bytes, StandardCharsets.UTF_8).removePrefix("﻿").trim()
+        val text = String(bytes, StandardCharsets.UTF_8).removePrefix("\uFEFF").trim()
         val root = rootElement(text) ?: return Result.Problem("This isn't a draw.io diagram (it isn't XML).")
         return when (root.first) {
             "mxfile", "mxGraphModel" -> Result.Diagram(text)

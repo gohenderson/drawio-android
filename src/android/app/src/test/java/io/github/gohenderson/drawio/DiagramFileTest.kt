@@ -23,7 +23,7 @@ class DiagramFileTest {
 
     @Test
     fun aByteOrderMarkAndSpaceAreIgnored() {
-        assertEquals(file, diagram(DiagramFile.parse(("﻿\n  $file\n").toByteArray())))
+        assertEquals(file, diagram(DiagramFile.parse(("\uFEFF\n  $file\n").toByteArray())))
     }
 
     @Test
