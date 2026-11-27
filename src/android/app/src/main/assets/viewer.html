@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<!--
+	The Android viewer page. Renders the diagram the app passes in with
+	viewer-static.min.js (shapes embedded, no network), the same script the
+	macOS Quick Look preview uses. The app copies the script in at build time
+	from the drawio submodule. The app has no INTERNET permission
+-->
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.25, maximum-scale=10, user-scalable=yes">
+	<style>
+		html, body
+		{
+			margin: 0;
+			padding: 0;
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			background: #ffffff;
+		}
+		#diagram
+		{
+			width: 100%;
+			height: 100%;
+		}
+		#error
+		{
+			display: none;
+			padding: 2em;
+			font-family: sans-serif;
+			color: #666666;
+			text-align: center;
+		}
+	</style>
+</head>
+<body>
+	<div id="diagram" style="width: 100%; height: calc(100% - 26px);"></div>
+	<div id="error"></div>
+	<script>
+		// The app's bridge (DiagramBridge); a stub when the page is opened in a browser
+		var host = window.DrawioAndroid ||
+		{
+			xml: function() { return window.testXml || ''; },
+			rendered: function(pages) { window.testResult = 'rendered:' + pages; },
+			failed: function(message) { window.testResult = 'failed:' + message; }
+		};
+
+		function showError(message)
+		{
+			var err = document.getElementById('error');
+			err.style.display = 'block';
+			err.innerText = 'Cannot show this diagram: ' + message;
+			document.getElementById('diagram').style.display = 'none';
+			host.failed(String(message));
+		}
+
+		function countPages(xml)
+		{
+			var doc = new DOMParser().parseFromString(xml, 'text/xml');
+			var pages = doc.documentElement.nodeName == 'mxfile' ?
+				doc.documentElement.getElementsByTagName('diagram').length : 1;
+
+			return Math.max(1, pages);
+		}
+
+		// The whole page on screen at first (never bigger than real size), and
+		// the toolbar's Fit button comes back to this
+		function fitToScreen(viewer)
+		{
+			var graph = viewer.graph;
+			graph.maxFitScale = 1;
+			graph.fit(10, false, 0, true, false, false);
+			graph.center(true, true, 0.5, 0.5);
+			graph.initialViewState =
+			{
+				scale: graph.view.scale,
+				translate: graph.view.translate.clone()
+			};
+		}
+
+		function showDiagram()
+		{
+			try
+			{
+				var xml = host.xml();
+
+				if (!xml)
+				{
+					return;
+				}
+
+				var div = document.getElementById('diagram');
+				div.innerHTML = '';
+				div.style.display = 'block';
+				document.getElementById('error').style.display = 'none';
+
+				div.setAttribute('data-mxgraph', JSON.stringify(
+				{
+					xml: xml,
+					highlight: 'none',
+					lightbox: false,
+					nav: true,
+					resize: false,
+					'auto-fit': true,
+					center: true,
+					toolbar: 'pages zoom layers',
+					'toolbar-position': 'top',
+					'toolbar-nohide': true
+				}));
+
+				GraphViewer.createViewerForElement(div, function(viewer)
+				{
+					if (div.getElementsByTagName('svg').length == 0)
+					{
+						showError('nothing to draw');
+					}
+					else
+					{
+						fitToScreen(viewer);
+						host.rendered(countPages(xml));
+					}
+				});
+			}
+			catch (e)
+			{
+				showError(e.message || e);
+			}
+		}
+
+		window.onDrawioViewerLoad = showDiagram;
+	</script>
+	<script src="viewer-static.min.js"></script>
+</body>
+</html>

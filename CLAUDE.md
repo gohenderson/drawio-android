@@ -86,6 +86,10 @@ drawio-desktop/
 └── package.json
 ```
 
+## Android app (`src/android`)
+
+A native Android port (Kotlin, no Electron) lives in `src/android`, a standalone Gradle project; see `src/android/README.md`. For now it's a viewer: `MainActivity` reads the file (`DiagramFile`: plain XML, `.drawio.png` zTXt/tEXt like `png-xml.js`, `.drawio.svg` content attribute) and shows it with `viewer-static.min.js` in a WebView on `assets/viewer.html`, through a `DrawioAndroid` JavaScript bridge. The script is copied from the submodule at build time (`copyDrawioViewer`), or from `src/android/build/drawio/` after `src/android/scripts/fetch-viewer.sh`. No INTERNET permission, and the WebView loads only the app's assets. CI: `.github/workflows/android.yml` (build, unit tests, lint, emulator UI tests, debug APK artifact).
+
 ## Tech Stack
 
 - **Runtime:** Node.js 22.12+ (`engines` in `package.json`; CI builds on Node 24)

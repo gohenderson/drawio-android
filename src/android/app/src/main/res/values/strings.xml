@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">draw.io viewer</string>
+    <string name="open">Open</string>
+    <string name="empty">Open a .drawio diagram to view it. You can also open one from your file manager, or share one to this app.</string>
+    <string name="cant_read">Couldn\'t read this file.</string>
+    <string name="no_picker">There\'s no app on this phone for picking a file.</string>
+</resources>
