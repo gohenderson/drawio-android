@@ -33,16 +33,16 @@ val fetched = rootProject.layout.buildDirectory.dir("drawio").get().asFile
 fun drawioFile(path: String, fallback: String) =
     repoRoot.resolve("drawio/$path").takeIf { it.isFile } ?: fetched.resolve(fallback)
 
-val viewerScript = drawioFile("src/main/webapp/js/viewer-static.min.js", "viewer-static.min.js")
+val viewerSource = drawioFile("src/main/webapp/js/viewer-static.min.js", "viewer-static.min.js")
 
 val copyViewer = tasks.register<CopyViewer>("copyDrawioViewer") {
-    if (!viewerScript.isFile) {
+    if (!viewerSource.isFile) {
         throw GradleException(
             "No draw.io viewer script: run src/android/scripts/fetch-viewer.sh " +
                 "(fetches just that file) or git submodule update --init drawio."
         )
     }
-    this.viewerScript.set(viewerScript)
+    viewerScript.set(viewerSource)
     outputDir.set(layout.buildDirectory.dir("generated/drawioViewer"))
 }
 
